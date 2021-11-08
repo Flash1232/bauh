@@ -139,3 +139,7 @@ class FlatpakApplication(SoftwarePackage):
 
     def can_be_uninstalled(self) -> bool:
         return not self.update_component and super(FlatpakApplication, self).can_be_uninstalled()
+
+    def update_ref(self):
+        if self.id and self.arch and self.branch:
+            self.ref = f'{self.id}/{self.arch}/{self.branch}'

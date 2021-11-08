@@ -156,10 +156,12 @@ class FlatpakManager(SoftwareManager):
                                                  installation=update_id_split[2],
                                                  name=update_id_split[0].split('.')[-1].strip(),
                                                  version=update_id_split[1],
+                                                 arch='x86_64' if self.context.is_system_x86_64() else 'x86',
                                                  origin=update_id_split[3] if len(update_id_split) == 4 else None)
                     new_app.update_component = True  # mark as "update component"
                     new_app.installed = True  # faking the "installed" status to be displayed as an update
                     new_app.update = True
+                    new_app.update_ref()
                     models[update_id] = new_app
 
             if version >= VERSION_1_2:
@@ -230,10 +232,16 @@ class FlatpakManager(SoftwareManager):
                 ref = req.pkg.base_ref
 
             try:
-                res, _ = ProcessHandler(watcher).handle_simple(flatpak.update(app_ref=ref,
-                                                                              installation=req.pkg.installation,
-                                                                              related=related,
-                                                                              deps=deps))
+                if req.pkg.update_component:
+                    res, _ = ProcessHandler(watcher).handle_simple(flatpak.install(app_id=ref,
+                                                                                   installation=req.pkg.installation,
+                                                                                   origin=req.pkg.origin))
+
+                else:
+                    res, _ = ProcessHandler(watcher).handle_simple(flatpak.update(app_ref=ref,
+                                                                                  installation=req.pkg.installation,
+                                                                                  related=related,
+                                                                                  deps=deps))
 
                 watcher.change_substatus('')
                 if not res:
@@ -272,6 +280,8 @@ class FlatpakManager(SoftwareManager):
                             'branch': app.branch,
                             'installation': app.installation,
                             'origin': app.origin,
+                            'arch': app.arch,
+                            'ref': app.ref,
                             'type': self.i18n['unknown']}
             else:
                 version = flatpak.get_version()
