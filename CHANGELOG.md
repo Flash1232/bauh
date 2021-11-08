@@ -4,10 +4,13 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
 
-## [0.9.21]
+## [0.9.21] 2021
 ### Fixes
 - Flatpak
   - not displaying update components not associated with installed packages 
+
+- UI
+  - upgrade summary: not displaying the icon type for some applications 
 
 ## [0.9.20] 2021-11-05
 ### Improvements
