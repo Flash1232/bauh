@@ -130,10 +130,8 @@ class FlatpakApplication(SoftwarePackage):
             return super(FlatpakApplication, self).get_disk_icon_path()
 
     def get_update_id(self, flatpak_version: Version) -> str:
-        if flatpak_version >= VERSION_1_5:
+        if flatpak_version >= VERSION_1_2:
             return f'{self.id}/{self.branch}/{self.installation}/{self.origin}'
-        elif flatpak_version >= VERSION_1_2:
-            return f'{self.id}/{self.branch}/{self.installation}'
         else:
             return f'{self.installation}/{self.ref}'
 

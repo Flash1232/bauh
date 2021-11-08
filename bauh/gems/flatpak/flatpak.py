@@ -210,8 +210,8 @@ def read_updates(version: Version, installation: str) -> Dict[str, set]:
                     if len(line_split) > 2:
                         if version >= VERSION_1_5:
                             update_id = f'{line_split[2]}/{line_split[3]}/{installation}/{line_split[5]}'
-                        elif version >= VERSION_1_2:  # TODO check
-                            update_id = f'{line_split[2]}/{line_split[3]}/{installation}'
+                        elif version >= VERSION_1_2:
+                            update_id = f'{line_split[2]}/{line_split[4]}/{installation}/{line_split[5]}'
                         else:
                             update_id = '{}/{}/{}'.format(line_split[2], line_split[4], installation)
 
