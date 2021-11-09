@@ -74,7 +74,7 @@ class FlatpakApplication(SoftwarePackage):
                 setattr(self, attr, data[attr])
 
     def can_be_run(self) -> bool:
-        return self.installed and not self.runtime and not self.partial
+        return self.installed and not self.runtime and not self.partial and not self.update_component
 
     def get_publisher(self):
         return self.origin
