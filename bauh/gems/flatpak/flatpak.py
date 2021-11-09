@@ -215,7 +215,7 @@ def read_updates(version: Version, installation: str) -> Dict[str, set]:
                         else:
                             update_id = '{}/{}/{}'.format(line_split[2], line_split[4], installation)
 
-                        if len(line_split) >= 6:
+                        if version >= VERSION_1_3 and len(line_split) >= 6:
                             if line_split[4].strip().lower() in OPERATION_UPDATE_SYMBOLS:
                                 if '(partial)' in line_split[-1]:
                                     res['partial'].add(update_id)
