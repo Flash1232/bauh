@@ -284,6 +284,10 @@ class AURBuilder:
 
         return SystemProcess(new_subprocess(final_cmd))
 
+    def _execute(self, cmd: str) -> Tuple[int, Optional[str]]:
+        final_cmd = self._gen_root_builder_cmd(cmd.split(' ')) if self._root else cmd
+        return system.execute(final_cmd, shell=True, stdin=False)
+
     def _run_cmd(self, cmd: str, **kwargs) -> str:
         if self._root:
             final_cmd = ' '.join(self._gen_root_builder_cmd(cmd.split(" ")))
@@ -360,11 +364,10 @@ class AURBuilder:
         updated_src = self._run_cmd('makepkg --printsrcinfo', cwd=project_dir)
 
         if updated_src:
-
-            # with open('{}/.SRCINFO'.format(project_dir), 'w+') as f:  # FIXME
+            write_code, _ = self._execute(f'echo "{updated_src}" > f{project_dir}/.SRCINFO')
+            return write_code == 0
+            # with open('{}/.SRCINFO'.format(project_dir), 'w+') as f:  # FIXME remove
             #     f.write(updated_src)
-
-            return True
 
         return False
 

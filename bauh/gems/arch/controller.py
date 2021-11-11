@@ -27,7 +27,7 @@ from bauh.api.abstract.view import MessageType, FormComponent, InputOption, Sing
     FileChooserComponent, TextComponent
 from bauh.api.constants import TEMP_DIR
 from bauh.api.exception import NoInternetException
-from bauh.commons import user, system
+from bauh.commons import system, user
 from bauh.commons.boot import CreateConfigFile
 from bauh.commons.category import CategoriesDownloader
 from bauh.commons.html import bold
@@ -1829,7 +1829,7 @@ class ArchManager(SoftwareManager):
         return pkg_repos
 
     def _pre_download_source(self, pkgname: str, project_dir: str, watcher: ProcessWatcher) -> bool:
-        if self.context.file_downloader.is_multithreaded():
+        if not user.is_root() and self.context.file_downloader.is_multithreaded():  # TODO check if it works
             with open('{}/.SRCINFO'.format(project_dir)) as f:
                 srcinfo = aur.map_srcinfo(string=f.read(), pkgname=pkgname)
 
@@ -1841,7 +1841,7 @@ class ArchManager(SoftwareManager):
                         continue
                     else:
                         for f in srcinfo[attr]:
-                             if RE_PRE_DOWNLOAD_WL_PROTOCOLS.match(f) and not RE_PRE_DOWNLOAD_BL_EXT.match(f):
+                            if RE_PRE_DOWNLOAD_WL_PROTOCOLS.match(f) and not RE_PRE_DOWNLOAD_BL_EXT.match(f):
                                 pre_download_files.append(f)
 
             if pre_download_files:
@@ -3413,12 +3413,12 @@ class ArchManager(SoftwareManager):
         new_pkgbuild = RE_PKGBUILD_PKGNAME.sub("pkgname={}".format(names), current_pkgbuild)
         custom_pkgbuild_path = pkgbuild_path + '_CUSTOM'
 
-        with open(custom_pkgbuild_path, 'w+') as f:
+        with open(custom_pkgbuild_path, 'w+') as f: # TODO
             f.write(new_pkgbuild)
 
         new_srcinfo = self.aur_builder.gen_srcinfo(context.project_dir, custom_pkgbuild_path)
 
-        with open('{}/.SRCINFO'.format(context.project_dir), 'w+') as f:
+        with open('{}/.SRCINFO'.format(context.project_dir), 'w+') as f:  # TODO
             f.write(new_srcinfo)
 
         return custom_pkgbuild_path
