@@ -34,11 +34,11 @@ from bauh.commons.html import bold
 from bauh.commons.system import SystemProcess, ProcessHandler, new_subprocess, run_cmd, SimpleProcess
 from bauh.commons.util import datetime_as_milis
 from bauh.commons.view_utils import new_select
-from bauh.gems.arch import aur, pacman, makepkg, message, confirmation, disk, git, \
+from bauh.gems.arch import aur, pacman, message, confirmation, disk, git, \
     gpg, URL_CATEGORIES_FILE, CATEGORIES_FILE_PATH, CUSTOM_MAKEPKG_FILE, SUGGESTIONS_FILE, \
     get_icon_path, database, mirrors, sorting, cpu_manager, UPDATES_IGNORED_FILE, \
     CONFIG_DIR, EDITABLE_PKGBUILDS_FILE, URL_GPG_SERVERS, BUILD_DIR, rebuild_detector
-from bauh.gems.arch.aur import AURClient
+from bauh.gems.arch.aur import AURClient, AURBuilder
 from bauh.gems.arch.config import get_build_dir, ArchConfigManager
 from bauh.gems.arch.dependencies import DependenciesAnalyser
 from bauh.gems.arch.download import MultithreadedDownloadService, ArchDownloadException
@@ -246,6 +246,7 @@ class ArchManager(SoftwareManager):
         self.index_aur = None
         self.re_file_conflict = re.compile(r'[\w\d\-_.]+:')
         self.disk_cache_updater = disk_cache_updater
+        self.aur_builder = AURBuilder()
 
     @staticmethod
     def get_aur_semantic_search_map() -> Dict[str, str]:
@@ -688,7 +689,8 @@ class ArchManager(SoftwareManager):
                     context.handler.watcher.change_progress(10)
                     base_name = context.get_base_name()
                     context.watcher.change_substatus(self.i18n['arch.clone'].format(bold(context.name)))
-                    cloned, _ = context.handler.handle_simple(git.clone_as_process(url=URL_GIT.format(base_name), cwd=context.build_dir))
+                    cloned, _ = context.handler.handle_simple(self.aur_builder.clone_repository(url=URL_GIT.format(base_name),
+                                                                                                cwd=context.build_dir))
                     context.watcher.change_progress(30)
 
                     if cloned:
@@ -857,12 +859,13 @@ class ArchManager(SoftwareManager):
             shutil.rmtree(pkg.get_disk_cache_path())
 
     def _check_action_allowed(self, pkg: ArchPackage, watcher: ProcessWatcher) -> bool:
-        if user.is_root() and pkg.repository == 'aur':
-            watcher.show_message(title=self.i18n['arch.install.aur.root_error.title'],
-                                 body=self.i18n['arch.install.aur.root_error.body'],
-                                 type_=MessageType.ERROR)
-            return False
-        return True
+        return True  # FIXME remove method
+        # if user.is_root() and pkg.repository == 'aur':
+        #     watcher.show_message(title=self.i18n['arch.install.aur.root_error.title'],
+        #                          body=self.i18n['arch.install.aur.root_error.body'],
+        #                          type_=MessageType.ERROR)
+        #     return False
+        # return True
 
     def _is_database_locked(self, handler: ProcessHandler, root_password: str) -> bool:
         if os.path.exists('/var/lib/pacman/db.lck'):
@@ -1874,7 +1877,7 @@ class ArchManager(SoftwareManager):
             with open(pkgbuild_path, 'w+') as f:
                 f.write(pkgbuild_input.get_value())
 
-            return makepkg.update_srcinfo('/'.join(pkgbuild_path.split('/')[0:-1]))
+            return self.aur_builder.update_srcinfo('/'.join(pkgbuild_path.split('/')[0:-1]))
 
         return False
 
@@ -1898,7 +1901,7 @@ class ArchManager(SoftwareManager):
                                               watcher=context.watcher,
                                               pkgbuild_path='{}/PKGBUILD'.format(context.project_dir)):
                 context.pkgbuild_edited = True
-                srcinfo = aur.map_srcinfo(string=makepkg.gen_srcinfo(context.project_dir), pkgname=context.name)
+                srcinfo = aur.map_srcinfo(string=self.aur_builder.gen_srcinfo(context.project_dir), pkgname=context.name)
 
                 if srcinfo:
                     context.name = srcinfo['pkgname']
@@ -1916,7 +1919,7 @@ class ArchManager(SoftwareManager):
     def _read_srcinfo(self, context: TransactionContext) -> str:
         src_path = '{}/.SRCINFO'.format(context.project_dir)
         if not os.path.exists(src_path):
-            srcinfo = makepkg.gen_srcinfo(context.project_dir, context.custom_pkgbuild_path)
+            srcinfo = self.aur_builder.gen_srcinfo(context.project_dir, context.custom_pkgbuild_path)
 
             with open(src_path, 'w+') as f:
                 f.write(srcinfo)
@@ -1946,10 +1949,10 @@ class ArchManager(SoftwareManager):
             cpus_changed, cpu_prev_governors = cpu_manager.set_all_cpus_to('performance', context.root_password, self.logger)
 
         try:
-            pkgbuilt, output = makepkg.make(pkgdir=context.project_dir,
-                                            optimize=optimize,
-                                            handler=context.handler,
-                                            custom_pkgbuild=context.custom_pkgbuild_path)
+            pkgbuilt, output = self.aur_builder.makepkg(pkgdir=context.project_dir,
+                                                        optimize=optimize,
+                                                        handler=context.handler,
+                                                        custom_pkgbuild=context.custom_pkgbuild_path)
         finally:
             if cpus_changed and cpu_prev_governors:
                 self.logger.info("Restoring CPU governors")
@@ -1997,7 +2000,7 @@ class ArchManager(SoftwareManager):
     def __fill_aur_output_files(self, context: TransactionContext):
         self.logger.info("Determining output files of '{}'".format(context.name))
         context.watcher.change_substatus(self.i18n['arch.aur.build.list_output'])
-        output_files = {f for f in makepkg.list_output_files(context.project_dir, context.custom_pkgbuild_path) if os.path.isfile(f)}
+        output_files = {f for f in self.aur_builder.list_output_files(context.project_dir, context.custom_pkgbuild_path) if os.path.isfile(f)}
 
         if output_files:
             context.install_files = output_files
@@ -2012,7 +2015,7 @@ class ArchManager(SoftwareManager):
             file_to_install = gen_file[0]
 
             if len(gen_file) > 1:
-                srcinfo = aur.map_srcinfo(string=makepkg.gen_srcinfo(context.project_dir), pkgname=context.name)
+                srcinfo = aur.map_srcinfo(string=self.aur_builder.gen_srcinfo(context.project_dir), pkgname=context.name)
                 pkgver = '-{}'.format(srcinfo['pkgver']) if srcinfo.get('pkgver') else ''
                 pkgrel = '-{}'.format(srcinfo['pkgrel']) if srcinfo.get('pkgrel') else ''
                 arch = '-{}'.format(srcinfo['arch']) if srcinfo.get('arch') else ''
@@ -2133,11 +2136,11 @@ class ArchManager(SoftwareManager):
         if not handled_deps:
             return False
 
-        check_res = makepkg.check(context.project_dir,
-                                  optimize=bool(context.config['optimize']),
-                                  missing_deps=False,
-                                  handler=context.handler,
-                                  custom_pkgbuild=context.custom_pkgbuild_path)
+        check_res = self.aur_builder.check_issues(context.project_dir,
+                                                  optimize=bool(context.config['optimize']),
+                                                  missing_deps=False,
+                                                  handler=context.handler,
+                                                  custom_pkgbuild=context.custom_pkgbuild_path)
 
         if check_res:
             if check_res.get('gpg_key'):
@@ -2507,13 +2510,14 @@ class ArchManager(SoftwareManager):
 
         try:
             if not os.path.exists(context.build_dir):
-                build_dir = context.handler.handle(SystemProcess(new_subprocess(['mkdir', '-p', context.build_dir])))
+                build_dir = context.handler.handle(self.aur_builder.new_system_process(['mkdir', '-p', context.build_dir]))
                 self._update_progress(context, 10)
 
                 if build_dir:
                     base_name = context.get_base_name()
                     context.watcher.change_substatus(self.i18n['arch.clone'].format(bold(base_name)))
-                    cloned = context.handler.handle_simple(git.clone_as_process(url=URL_GIT.format(base_name), cwd=context.build_dir, depth=1))
+                    cloned = context.handler.handle_simple(self.aur_builder.clone_repository(url=URL_GIT.format(base_name),
+                                                                                             cwd=context.build_dir, depth=1))
 
                     if cloned:
                         self._update_progress(context, 40)
@@ -3412,7 +3416,7 @@ class ArchManager(SoftwareManager):
         with open(custom_pkgbuild_path, 'w+') as f:
             f.write(new_pkgbuild)
 
-        new_srcinfo = makepkg.gen_srcinfo(context.project_dir, custom_pkgbuild_path)
+        new_srcinfo = self.aur_builder.gen_srcinfo(context.project_dir, custom_pkgbuild_path)
 
         with open('{}/.SRCINFO'.format(context.project_dir), 'w+') as f:
             f.write(new_srcinfo)

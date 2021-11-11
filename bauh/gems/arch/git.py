@@ -3,7 +3,7 @@ from datetime import datetime
 from typing import List, Tuple, Optional
 
 from bauh.commons import system
-from bauh.commons.system import new_subprocess, SimpleProcess
+from bauh.commons.system import new_subprocess
 
 
 def is_installed() -> bool:
@@ -51,12 +51,3 @@ def log_shas_and_timestamps(repo_path: str) -> Optional[List[Tuple[str, int]]]:
                 logs.append((line_split[0].strip(), int(line_split[1].strip())))
 
         return logs
-
-
-def clone_as_process(url: str, cwd: Optional[str], depth: int = -1) -> SimpleProcess:
-    cmd = ['git', 'clone', url]
-
-    if depth > 0:
-        cmd.append('--depth={}'.format(depth))
-
-    return SimpleProcess(cmd=cmd, cwd=cwd)

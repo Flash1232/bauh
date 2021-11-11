@@ -2,12 +2,16 @@ import logging
 import os
 import re
 import urllib.parse
-from typing import Set, List, Iterable, Dict, Optional
+from typing import Set, List, Iterable, Dict, Optional, Tuple
 
 import requests
 
+from bauh import __app_name__
 from bauh.api.http import HttpClient
-from bauh.gems.arch import AUR_INDEX_FILE, git
+from bauh.commons import system
+from bauh.commons.system import SystemProcess, new_subprocess, SimpleProcess, ProcessHandler
+from bauh.commons.user import is_root
+from bauh.gems.arch import AUR_INDEX_FILE, git, CUSTOM_MAKEPKG_FILE
 from bauh.gems.arch.exceptions import PackageNotFoundException
 
 URL_INFO = 'https://aur.archlinux.org/rpc/?v=5&type=info&'
@@ -258,5 +262,123 @@ class AURClient:
         output[pkgname] = data
 
 
+class AURBuilder:
+
+    ROOT_BUILDER_USER = __app_name__
+    RE_UNKNOWN_GPG_KEY = re.compile(r'\(unknown public key (\w+)\)')
+    RE_DEPS_PATTERN = re.compile(r'\n?\s+->\s(.+)\n')
+
+    def __init__(self):
+        self._root = is_root()
+
+    # TODO always check if builder user exist
+
+    def _gen_root_builder_cmd(self, cmd: list) -> list:
+        return ['su', self.ROOT_BUILDER_USER, '-c', '"{}"'.format(' '.join(cmd))]
+
+    def new_system_process(self, cmd: list) -> SystemProcess:
+        if self._root:
+            final_cmd = self._gen_root_builder_cmd(cmd)
+        else:
+            final_cmd = cmd
+
+        return SystemProcess(new_subprocess(final_cmd))
+
+    def _run_cmd(self, cmd: str, **kwargs) -> str:
+        if self._root:
+            final_cmd = ' '.join(self._gen_root_builder_cmd(cmd.split(" ")))
+        else:
+            final_cmd = cmd
+
+        return system.run_cmd(final_cmd, **kwargs)
+
+    def clone_repository(self, url: str, cwd: Optional[str], depth: int = -1) -> SimpleProcess:
+        cmd = ['git', 'clone', url]
+
+        if depth > 0:
+            cmd.append(f'--depth={depth}')
+
+        return SimpleProcess(cmd=self._gen_root_builder_cmd(cmd) if self._root else cmd, cwd=cwd)
+
+    def gen_srcinfo(self, build_dir: str, custom_pkgbuild_path: Optional[str] = None) -> str:
+        return self._run_cmd('makepkg --printsrcinfo{}'.format(' -p {}'.format(custom_pkgbuild_path) if custom_pkgbuild_path else ''),
+                             cwd=build_dir)
+
+    def check_issues(self, pkgdir: str, optimize: bool, missing_deps: bool, handler: ProcessHandler, custom_pkgbuild: Optional[str] = None) -> dict:
+        res = {}
+
+        cmd = ['makepkg', '-ALcfm', '--check', '--noarchive', '--nobuild', '--noprepare']
+
+        if not missing_deps:
+            cmd.append('--nodeps')
+
+        if custom_pkgbuild:
+            cmd.append('-p')
+            cmd.append(custom_pkgbuild)
+
+        if optimize:
+            if os.path.exists(CUSTOM_MAKEPKG_FILE):
+                handler.watcher.print('Using custom makepkg.conf -> {}'.format(CUSTOM_MAKEPKG_FILE))
+                cmd.append('--config={}'.format(CUSTOM_MAKEPKG_FILE))
+            else:
+                handler.watcher.print('Custom optimized makepkg.conf ( {} ) not found'.format(CUSTOM_MAKEPKG_FILE))
+
+        final_cmd = self._gen_root_builder_cmd(cmd) if self._root else cmd
+        success, output = handler.handle_simple(SimpleProcess(final_cmd, cwd=pkgdir, shell=True))
+
+        if missing_deps and 'Missing dependencies' in output:
+            res['missing_deps'] = self.RE_DEPS_PATTERN.findall(output)
+
+        gpg_keys = self.RE_UNKNOWN_GPG_KEY.findall(output)
+
+        if gpg_keys:
+            res['gpg_key'] = gpg_keys[0]
+
+        if 'One or more files did not pass the validity check' in output:
+            res['validity_check'] = True
+
+        return res
+
+    def makepkg(self, pkgdir: str, optimize: bool, handler: ProcessHandler, custom_pkgbuild: Optional[str] = None) -> Tuple[bool, str]:
+        cmd = ['makepkg', '-ALcsmf', '--skipchecksums', '--nodeps']
+
+        if custom_pkgbuild:
+            cmd.append('-p')
+            cmd.append(custom_pkgbuild)
+
+        if optimize:
+            if os.path.exists(CUSTOM_MAKEPKG_FILE):
+                handler.watcher.print('Using custom makepkg.conf -> {}'.format(CUSTOM_MAKEPKG_FILE))
+                cmd.append('--config={}'.format(CUSTOM_MAKEPKG_FILE))
+            else:
+                handler.watcher.print('Custom optimized makepkg.conf ( {} ) not found'.format(CUSTOM_MAKEPKG_FILE))
+
+        final_cmd = self._gen_root_builder_cmd(cmd) if self._root else cmd
+        return handler.handle_simple(SimpleProcess(final_cmd, cwd=pkgdir, shell=True))
+
+    def update_srcinfo(self, project_dir: str) -> bool:
+        updated_src = self._run_cmd('makepkg --printsrcinfo', cwd=project_dir)
+
+        if updated_src:
+
+            # with open('{}/.SRCINFO'.format(project_dir), 'w+') as f:  # FIXME
+            #     f.write(updated_src)
+
+            return True
+
+        return False
+
+    def list_output_files(self, project_dir: str, custom_pkgbuild_path: Optional[str] = None) -> Set[str]:
+        output = self._run_cmd(cmd='makepkg --packagelist{}'.format(' -p {}'.format(custom_pkgbuild_path) if custom_pkgbuild_path else ''),
+                               print_error=False,
+                               cwd=project_dir)
+
+        if output:
+            return {p.strip() for p in output.split('\n') if p}
+
+        return set()
+
+
 def is_supported(arch_config: dict) -> bool:
     return arch_config['aur'] and git.is_installed()
+

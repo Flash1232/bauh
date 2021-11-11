@@ -1,11 +1,12 @@
 import os
 from pathlib import Path
 
-from bauh.api.constants import CACHE_PATH, CONFIG_PATH, TEMP_DIR
+from bauh import __app_name__
+from bauh.api.constants import CACHE_PATH, CONFIG_PATH
 from bauh.commons import resource
 
 ROOT_DIR = os.path.dirname(os.path.abspath(__file__))
-BUILD_DIR = '{}/arch'.format(TEMP_DIR)
+BUILD_DIR = f'/tmp/{__app_name__}/arch'
 ARCH_CACHE_PATH = CACHE_PATH + '/arch'
 CATEGORIES_FILE_PATH = ARCH_CACHE_PATH + '/categories.txt'
 URL_CATEGORIES_FILE = 'https://raw.githubusercontent.com/vinifmor/bauh-files/master/arch/categories.txt'
