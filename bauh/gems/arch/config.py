@@ -10,7 +10,7 @@ def get_build_dir(arch_config: dict) -> str:
     if not build_dir:
         build_dir = BUILD_DIR
 
-    Path(build_dir).mkdir(parents=True, exist_ok=True)
+    # Path(build_dir).mkdir(parents=True, exist_ok=True)  # TODO fixme
     return build_dir
 
 
